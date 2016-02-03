@@ -47,7 +47,8 @@ class Transport(object):
         sniff_on_start=False, sniffer_timeout=None, sniff_timeout=.1,
         sniff_on_connection_fail=False, serializer=JSONSerializer(), serializers=None,
         default_mimetype='application/json', max_retries=3, retry_on_status=(503, 504, ),
-        retry_on_timeout=False, send_get_body_as='GET', **kwargs):
+        retry_on_timeout=False, send_get_body_as='GET',
+        retry_delay=0.1, retry_delay_factor=2.0, **kwargs):
         """
         :arg hosts: list of dictionaries, each containing keyword arguments to
             create a `connection_class` instance
@@ -80,9 +81,12 @@ class Transport(object):
             don't support passing bodies with GET requests. If you set this to
             'POST' a POST method will be used instead, if to 'source' then the body
             will be serialized and passed as a query parameter `source`.
+        :arg retry_delay: initial delay between retries, in seconds.
+        :arg retry_delay_factor: multiplication factor to increase delay between
+            retries, which produces an exponential backoff.
 
         Any extra keyword arguments will be passed to the `connection_class`
-        when creating and instance unless overriden by that connection's
+        when creating an instance unless overridden by that connection's
         options provided as part of the hosts parameter.
         """
 
@@ -99,6 +103,8 @@ class Transport(object):
         self.max_retries = max_retries
         self.retry_on_timeout = retry_on_timeout
         self.retry_on_status = retry_on_status
+        self.retry_delay = retry_delay
+        self.retry_delay_factor = retry_delay_factor
         self.send_get_body_as = send_get_body_as
 
         # data serializer
@@ -269,6 +275,7 @@ class Transport(object):
         :arg body: body of the request, will be serializes using serializer and
             passed to the connection
         """
+        delay = self.retry_delay
         if body is not None:
             body = self.serializer.dumps(body)
 
@@ -321,6 +328,9 @@ class Transport(object):
                     # raise exception on last retry
                     if attempt == self.max_retries:
                         raise
+                    else:
+                        time.sleep(delay)
+                        delay *= self.retry_delay_factor
                 else:
                     raise
 
